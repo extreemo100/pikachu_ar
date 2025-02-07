@@ -1,0 +1,114 @@
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/gh/extreemo100/pikachugltf/mindar-image-three.prod.js"></script>
+    <style>
+      html, body {position: relative; margin: 0; width: 100%; height: 100%; overflow: hidden;}
+      .button {
+        position: absolute;
+        padding: 10px 14px; /* Smaller padding */
+        font-size: 14px; /* Smaller font */
+        color: #fff;
+        background-color: #000;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        z-index: 9999;
+      }
+      .button:hover {
+        background-color: #444;
+      }
+      .store-button {
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+      }
+      .unmute-button {
+        top: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+      }
+    </style>
+  </head>
+  <body>
+    <script type="module">
+      import {loadGLTF} from "./loader.js";
+      const THREE = window.MINDAR.IMAGE.THREE;
+
+      document.addEventListener('DOMContentLoaded', () => {
+        // Create the "Visit Store" button
+        const storeButton = document.createElement("button");
+        storeButton.classList.add("button", "store-button");
+        storeButton.innerText = "Visit the Radical Store";
+        storeButton.addEventListener("click", () => {
+          window.location.href = "https://theradical.store";
+        });
+        document.body.appendChild(storeButton);
+
+        // Create the "Tap to Unmute" button
+        const unmuteButton = document.createElement("button");
+        unmuteButton.classList.add("button", "unmute-button");
+        unmuteButton.innerText = "🔊 Unmute";
+        document.body.appendChild(unmuteButton);
+
+        let isMuted = true; // Start muted
+
+        const start = async() => {
+          const mindarThree = new window.MINDAR.IMAGE.MindARThree({
+            container: document.body,
+            imageTargetSrc: 'pikachu.mind',
+          });
+          const {renderer, scene, camera} = mindarThree;
+
+          const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+          scene.add(light);
+
+          const gltf = await loadGLTF('pikachudancing.glb');
+          gltf.scene.scale.set(1,1,1);
+          gltf.scene.position.set(0, -0.4, 0);
+
+          const anchor = mindarThree.addAnchor(0);
+          anchor.group.add(gltf.scene);
+
+          const mixer = new THREE.AnimationMixer(gltf.scene);
+          const action = mixer.clipAction(gltf.animations[0]);
+          action.play();
+
+          const clock = new THREE.Clock();
+
+          // AUDIO SETUP
+          const audio = new Audio('pikachusong.m4a'); // Change this to your audio file
+          audio.loop = true;
+
+          // Play audio only after unmuting
+          anchor.onTargetFound = () => {
+            if (!isMuted) {
+              audio.play();
+            }
+          };
+
+          anchor.onTargetLost = () => {
+            audio.pause();
+            audio.currentTime = 0; // Reset to start
+          };
+
+          // Unmute on button tap
+          unmuteButton.addEventListener("click", () => {
+            isMuted = false;
+            audio.play(); // Start playing after user interaction
+            unmuteButton.remove(); // Remove button after unmuting
+          });
+
+          await mindarThree.start();
+          renderer.setAnimationLoop(() => {
+            const delta = clock.getDelta();
+            gltf.scene.rotation.set(0, 0, 0);
+            mixer.update(delta);
+            renderer.render(scene, camera);
+          });
+        };
+        start();
+      });
+    </script>
+  </body>
+</html>
