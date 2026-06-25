@@ -329,6 +329,44 @@
       @media (prefers-reduced-motion: reduce) {
         .flash.go { animation: none; }
       }
+
+      /* ---- Lock-on toast (acid success chip, slides down from the top) ---- */
+      .lock-toast {
+        position: fixed;
+        top: calc(18px + env(safe-area-inset-top));
+        left: 50%;
+        z-index: 70;
+        pointer-events: none;
+        font-family: var(--f-display);
+        font-size: 15px;
+        letter-spacing: -0.3px;
+        text-transform: uppercase;
+        color: var(--ink);
+        background: var(--acid);
+        border: 2px solid var(--ink);
+        border-radius: 30px;
+        box-shadow: 3px 3px 0 var(--ink);
+        padding: 10px 18px;
+        white-space: nowrap;
+        transform: translateX(-50%) translateY(-160%);
+        opacity: 0;
+      }
+      .lock-toast[hidden] { display: none; }
+      .lock-toast.go { animation: lockToast 1.8s cubic-bezier(.2,.9,.25,1) both; }
+      @keyframes lockToast {
+        0%   { transform: translateX(-50%) translateY(-160%); opacity: 0; }
+        12%  { transform: translateX(-50%) translateY(8%);    opacity: 1; }   /* slight overshoot */
+        20%  { transform: translateX(-50%) translateY(0);     opacity: 1; }
+        80%  { transform: translateX(-50%) translateY(0);     opacity: 1; }
+        100% { transform: translateX(-50%) translateY(-160%); opacity: 0; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .lock-toast.go { animation: lockToastFade 1.8s ease both; }
+        @keyframes lockToastFade {
+          0%, 100% { opacity: 0; transform: translateX(-50%) translateY(0); }
+          15%, 80% { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+      }
     </style>
   </head>
 
@@ -392,8 +430,11 @@
       <button id="storeBtn" class="btn icon-btn" type="button">Visit Store →</button>
     </div>
 
-    <!-- Full-screen flash for shutter (paper) and lock-on (acid) feedback -->
+    <!-- Full-screen flash for the Snap shutter -->
     <div id="flash" class="flash" aria-hidden="true"></div>
+
+    <!-- Lock-on toast — slides in when the target is found -->
+    <div id="lockToast" class="lock-toast" role="status" hidden>★ Locked On</div>
 
     <script type="module">
       import { loadGLTF } from "./loader.js";
@@ -422,6 +463,7 @@
       const storeBtn   = document.getElementById("storeBtn");
       const scanText   = document.getElementById("scanText");
       const flash      = document.getElementById("flash");
+      const lockToast  = document.getElementById("lockToast");
 
       const show = (el) => el.hidden = false;
       const hide = (el) => el.hidden = true;
@@ -431,12 +473,23 @@
       let audio        = null;
       let captureRequested = false;   // read by the render loop (see start())
 
-      // Brief full-screen flash — "acid" for lock-on, "shutter" for a snap
+      // Brief full-screen flash — used for the Snap shutter
       const triggerFlash = (variant = "") => {
         flash.className = "flash";          // reset so it can re-fire
         void flash.offsetWidth;             // force reflow
         flash.classList.add("go");
         if (variant) flash.classList.add(variant);
+      };
+
+      // Lock-on toast — slide in "★ Locked On", auto-dismiss after the animation
+      let lockToastTimer = null;
+      const showLockToast = () => {
+        clearTimeout(lockToastTimer);
+        lockToast.hidden = false;
+        lockToast.classList.remove("go");
+        void lockToast.offsetWidth;         // restart the animation
+        lockToast.classList.add("go");
+        lockToastTimer = setTimeout(() => { lockToast.hidden = true; }, 1800);
       };
 
       // ---- Scanning coaching: escalate the hint if the card isn't found ----
@@ -460,7 +513,7 @@
 
       const showError = (msg) => {
         if (msg) errorMsg.textContent = msg;
-        hide(onboarding); hide(loading); hideScanning(); hide(modelHint); hide(controls); hide(snapBtn);
+        hide(onboarding); hide(loading); hideScanning(); hide(modelHint); hide(controls); hide(snapBtn); hide(lockToast);
         show(errorBox);
       };
 
@@ -598,9 +651,9 @@
           anchor.onTargetFound = () => {
             targetVisible = true;
             hideScanning();
-            // Lock-on feedback: haptic buzz + acid flash + a quick pop-in
+            // Lock-on feedback: "★ Locked On" toast + haptic buzz + a quick pop-in
+            showLockToast();
             if (navigator.vibrate) navigator.vibrate(30);
-            triggerFlash();
             if (model) popStart = performance.now();
             if (soundOn && audio) audio.play().catch(() => {});
           };
