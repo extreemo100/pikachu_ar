@@ -362,6 +362,13 @@
 
     <script type="module">
       import { loadGLTF } from "./loader.js";
+      // Two Three.js builds coexist: MindAR bundles r128 (drives the renderer,
+      // scene, lights, anchors) while the model is loaded with three.module.js
+      // (r132). The AnimationMixer MUST come from the SAME build that loaded the
+      // model, or skinned animation interpolates against a mismatched skeleton
+      // and stutters. So we keep MindAR's THREE for the scene and the module
+      // THREE for the model's animation.
+      import * as THREE_MODEL from "./three.module.js";
       const THREE = window.MINDAR.IMAGE.THREE;
 
       // ---- UI refs ----
@@ -440,6 +447,11 @@
             uiLoading: "no",
             uiScanning: "no",
             uiError: "no",
+            // Smooth the tracked pose so the anchored model doesn't jitter.
+            // Lower filterMinCF = less jitter when still; lower filterBeta =
+            // a touch more lag but steadier. Tuned for a mostly-static card.
+            filterMinCF: 0.0001,
+            filterBeta: 0.001,
           });
           const { renderer, scene, camera } = mindarThree;
 
@@ -465,7 +477,12 @@
           // 1) Start the camera FIRST so the live feed is on screen immediately.
           await mindarThree.start();   // requests camera — may reject
 
-          const clock = new THREE.Clock();
+          // MindAR sets pixelRatio to the full devicePixelRatio (up to 3 on
+          // phones = 9x the pixels per frame). Cap it at 2 to keep the frame
+          // rate — and therefore the animation — smooth on mobile.
+          renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+          const clock = new THREE_MODEL.Clock();
           renderer.setAnimationLoop(() => {
             if (mixer) mixer.update(clock.getDelta());
             renderer.render(scene, camera);
@@ -481,7 +498,8 @@
           gltf.scene.position.set(0, -0.4, 0);
           anchor.group.add(gltf.scene);
 
-          mixer = new THREE.AnimationMixer(gltf.scene);
+          // Mixer from the model's own build (r132) — see import note above.
+          mixer = new THREE_MODEL.AnimationMixer(gltf.scene);
           mixer.clipAction(gltf.animations[0]).play();
 
           // ---- Audio: tied to target visibility, never floating on its own ----
