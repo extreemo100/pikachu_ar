@@ -1,112 +1,518 @@
-<html>
+<!DOCTYPE html>
+<html lang="en">
   <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#0d0d0d">
+    <title>The Radical Store · Pikachu AR</title>
+
+    <!-- Brand typefaces: Archivo Black (display), Space Grotesk (body/UI), DM Mono (labels) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+
     <script src="mindar-image-three.prod.js"></script>
+
     <style>
-      html, body {position: relative; margin: 0; width: 100%; height: 100%; overflow: hidden;}
-      .button {
-        position: absolute;
-        padding: 10px 14px; /* Smaller padding */
-        font-size: 14px; /* Smaller font */
-        color: #fff;
-        background-color: #000;
-        border: none;
-        border-radius: 5px;
+      /* ---- Brand tokens (identical names to the design system) ---- */
+      :root {
+        --ink:     #0d0d0d;
+        --paper:   #f4f1ea;
+        --paper2:  #ece7db;
+        --orange:  #ff5b1e;
+        --orange2: #e8410a;
+        --violet:  #5b3fff;
+        --acid:    #d4ff3f;
+        --pink:    #ff4fa3;
+
+        --f-display: 'Archivo Black', system-ui, sans-serif;
+        --f-body:    'Space Grotesk', system-ui, sans-serif;
+        --f-mono:    'DM Mono', ui-monospace, monospace;
+      }
+
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+      html, body {
+        position: relative;
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        font-family: var(--f-body);
+        /* MindAR puts the camera video at z-index:-2 and its canvas at -1,
+           i.e. BEHIND the page. The body must stay transparent or it paints
+           an opaque layer over the live feed. Opaque colour lives only on the
+           full-screen overlays (.paper-grid), which sit ABOVE the camera. */
+        background: transparent;
+      }
+
+      /* Warm-paper dotted grid, reused across every overlay */
+      .paper-grid {
+        background-color: var(--paper);
+        background-image: radial-gradient(var(--paper2) 1.6px, transparent 1.6px);
+        background-size: 22px 22px;
+      }
+
+      /* ---- Shared neo-brutalist primitives ---- */
+      .kicker {
+        font-family: var(--f-mono);
+        font-size: 12px;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        color: var(--ink);
+      }
+
+      .btn {
+        font-family: var(--f-display);
+        text-transform: uppercase;
+        letter-spacing: -0.3px;
+        font-size: 15px;
+        color: var(--paper);
+        background: var(--ink);
+        border: 2px solid var(--ink);
+        border-radius: 34px;            /* pill */
+        padding: 14px 22px;             /* >=44px tap target */
+        min-height: 48px;
         cursor: pointer;
+        box-shadow: 3px 3px 0 var(--ink);
+        transition: transform .14s, box-shadow .14s, background .14s;
+        user-select: none;
+      }
+      .btn--orange { background: var(--orange); color: var(--ink); }
+      .btn--paper  { background: var(--paper);  color: var(--ink); }
+
+      /* Touch devices don't hover — use :active so the lift fires on press */
+      .btn:active {
+        transform: translate(-2px, -2px);
+        box-shadow: 5px 5px 0 var(--violet);
+      }
+      @media (hover: hover) {
+        .btn:hover { transform: translate(-2px, -2px); box-shadow: 5px 5px 0 var(--violet); }
+      }
+
+      /* ---- Full-screen overlays ---- */
+      .overlay {
+        position: fixed;
+        inset: 0;
         z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 22px;
+        padding: 28px calc(22px + env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) calc(22px + env(safe-area-inset-left));
+        text-align: center;
       }
-      .button:hover {
-        background-color: #444;
+      .overlay[hidden] { display: none; }
+
+      .headline {
+        font-family: var(--f-display);
+        text-transform: uppercase;
+        letter-spacing: -2px;
+        line-height: 0.92;
+        font-size: clamp(40px, 13vw, 72px);
+        color: var(--ink);
+        margin: 0;
       }
-      .store-button {
-        bottom: 20px;
+      .headline .pop { color: var(--orange); }
+
+      .lede {
+        font-family: var(--f-body);
+        font-weight: 500;
+        font-size: 16px;
+        line-height: 1.4;
+        color: var(--ink);
+        max-width: 30ch;
+        margin: 0;
+      }
+
+      /* Brand "card" badge wrapping the on-screen instructions */
+      .scan-card {
+        background: var(--paper2);
+        border: 3px solid var(--ink);
+        border-radius: 18px;
+        box-shadow: 6px 6px 0 var(--ink);
+        padding: 22px 24px;
+        max-width: 340px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 14px;
+      }
+
+      /* Real target preview, framed as a brand component, with scan overlay */
+      .scan-target {
+        position: relative;
+        width: 150px;
+        aspect-ratio: 3 / 4;          /* matches the portrait card */
+        flex: none;
+        border: 3px solid var(--ink);
+        border-radius: 12px;          /* thumbnail radius per the system */
+        box-shadow: 6px 6px 0 var(--ink);
+        overflow: hidden;
+        background: var(--paper);
+      }
+      .scan-target img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      /* Fallback ⚡ when target.jpg hasn't been added yet */
+      .scan-target img.is-missing { display: none; }
+      .scan-target img.is-missing ~ .sweep { display: none; }
+      .scan-target::before {
+        content: "⚡";
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 54px;
+        opacity: 0;                   /* revealed only if the img is missing */
+      }
+      .scan-target:has(img.is-missing)::before { opacity: 1; }
+
+      /* Corner brackets + sweeping line — the "scan this" affordance */
+      .scan-target i {
+        position: absolute;
+        width: 22px;
+        height: 22px;
+        border: 4px solid var(--paper);
+        mix-blend-mode: difference;   /* stays visible over any artwork */
+        z-index: 2;
+      }
+      .scan-target i:nth-child(2){ top:5px; left:5px;  border-right:0; border-bottom:0; }
+      .scan-target i:nth-child(3){ top:5px; right:5px; border-left:0;  border-bottom:0; }
+      .scan-target i:nth-child(4){ bottom:5px; left:5px;  border-right:0; border-top:0; }
+      .scan-target i:nth-child(5){ bottom:5px; right:5px; border-left:0;  border-top:0; }
+      .scan-target .sweep {
+        position: absolute;
+        left: 5px; right: 5px;
+        height: 3px;
+        background: var(--orange);
+        box-shadow: 0 0 6px 1px var(--orange);
+        z-index: 2;
+        animation: sweep 1.9s ease-in-out infinite;
+      }
+      @keyframes sweep {
+        0%, 100% { top: 8%; }
+        50%      { top: 88%; }
+      }
+
+      /* ---- Loading spinner (hard-edged, on-brand) ---- */
+      .loader-box {
+        width: 64px; height: 64px;
+        border: 5px solid var(--ink);
+        border-top-color: var(--orange);
+        border-radius: 14px;
+        box-shadow: 5px 5px 0 var(--ink);
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+
+      /* ---- In-AR viewfinder reticle (over live camera, transparent center) ---- */
+      .reticle {
+        position: fixed;
+        top: 50%;
         left: 50%;
-        transform: translateX(-50%);
+        transform: translate(-50%, -54%);   /* sit slightly above optical centre */
+        width: min(68vw, 300px);
+        aspect-ratio: 3 / 4;                 /* matches the portrait Pikachu card */
+        z-index: 40;
+        pointer-events: none;
+        overflow: hidden;
       }
-      .unmute-button {
-        top: 10px;
+      .reticle[hidden] { display: none; }
+      .reticle i {
+        position: absolute;
+        width: 34px;
+        height: 34px;
+        border: 4px solid var(--orange);
+        filter: drop-shadow(2px 2px 0 var(--ink));   /* readable over any scene */
+      }
+      .reticle i:nth-child(1){ top:0; left:0;  border-right:0; border-bottom:0; border-top-left-radius:6px; }
+      .reticle i:nth-child(2){ top:0; right:0; border-left:0;  border-bottom:0; border-top-right-radius:6px; }
+      .reticle i:nth-child(3){ bottom:0; left:0;  border-right:0; border-top:0; border-bottom-left-radius:6px; }
+      .reticle i:nth-child(4){ bottom:0; right:0; border-left:0;  border-top:0; border-bottom-right-radius:6px; }
+      .reticle .sweep {
+        position: absolute;
+        left: 6px; right: 6px;
+        height: 3px;
+        background: var(--orange);
+        box-shadow: 0 0 8px 1px var(--orange);
+        animation: sweep 1.9s ease-in-out infinite;
+      }
+
+      /* ---- In-AR scanning hint (compact band, bottom-anchored, brand) ---- */
+      .scan-hint {
+        position: fixed;
         left: 50%;
+        bottom: calc(96px + env(safe-area-inset-bottom));
         transform: translateX(-50%);
+        z-index: 50;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-family: var(--f-mono);
+        font-size: 12px;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        color: var(--ink);
+        background: var(--acid);
+        border: 2px solid var(--ink);
+        border-radius: 30px;
+        box-shadow: 3px 3px 0 var(--ink);
+        padding: 9px 16px;
+        white-space: nowrap;
+      }
+      .scan-hint[hidden] { display: none; }
+      .scan-hint--violet { background: var(--violet); color: var(--paper); }
+      .scan-hint--violet .dot { background: var(--paper); }
+      .scan-hint .dot {
+        width: 9px; height: 9px; border-radius: 50%;
+        background: var(--ink);
+        animation: blink 1s steps(2, start) infinite;
+      }
+      @keyframes blink { 50% { opacity: 0.15; } }
+
+      /* ---- Persistent in-AR control bar (kept clear of MindAR's top scan area) ---- */
+      .controls {
+        position: fixed;
+        left: 0; right: 0;
+        bottom: calc(18px + env(safe-area-inset-bottom));
+        z-index: 60;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        padding: 0 calc(18px + env(safe-area-inset-right)) 0 calc(18px + env(safe-area-inset-left));
+        pointer-events: none;     /* only the buttons are interactive */
+      }
+      .controls .btn { pointer-events: auto; }
+      .controls[hidden] { display: none; }
+
+      .icon-btn {
+        font-family: var(--f-mono);
+        font-size: 13px;
+        letter-spacing: 1px;
+        text-transform: uppercase;
       }
     </style>
   </head>
+
   <body>
+    <!-- 1 ▸ ONBOARDING — also the user gesture that unlocks camera + audio -->
+    <section id="onboarding" class="overlay paper-grid">
+      <span class="kicker">★ The Radical Store · AR</span>
+      <h1 class="headline">Tap To<br>See <span class="pop">AR</span></h1>
+      <div class="scan-card">
+        <div class="scan-target">
+          <!-- Real target preview; falls back to the ⚡ frame if the file is missing -->
+          <img id="targetImg" src="target.jpeg" alt="The Pikachu card to point your camera at"
+               onerror="this.classList.add('is-missing')">
+          <i></i><i></i><i></i><i></i>
+          <span class="sweep"></span>
+        </div>
+        <p class="lede"><strong>This</strong> is your target — point your camera at the Pikachu card and watch it come alive, with sound.</p>
+      </div>
+      <button id="startBtn" class="btn btn--orange" type="button">Start Experience →</button>
+      <span class="kicker" style="opacity:.7">Needs camera access · works best in good light</span>
+    </section>
+
+    <!-- 2 ▸ LOADING -->
+    <section id="loading" class="overlay paper-grid" hidden>
+      <div class="loader-box" aria-hidden="true"></div>
+      <span class="kicker">Loading The Experience…</span>
+    </section>
+
+    <!-- 3 ▸ ERROR -->
+    <section id="error" class="overlay paper-grid" hidden>
+      <span class="kicker" style="color:var(--orange2)">★ Something Broke</span>
+      <h1 class="headline" style="font-size:clamp(32px,10vw,52px)">Camera<br>Needed</h1>
+      <p id="errorMsg" class="lede">We couldn't start the camera. Allow camera access, then reload.</p>
+      <button id="reloadBtn" class="btn btn--orange" type="button">Reload ↻</button>
+    </section>
+
+    <!-- 4 ▸ IN-AR viewfinder reticle — centered scan frame over the live camera -->
+    <div id="scanReticle" class="reticle" aria-hidden="true" hidden>
+      <i></i><i></i><i></i><i></i>
+      <span class="sweep"></span>
+    </div>
+
+    <!-- 4 ▸ IN-AR scanning hint -->
+    <div id="scanHint" class="scan-hint" hidden>
+      <span class="dot" aria-hidden="true"></span>
+      Scanning · point at the Pikachu card
+    </div>
+
+    <!-- 4b ▸ Model-loading chip — sits over the LIVE camera, never blocks it -->
+    <div id="modelHint" class="scan-hint scan-hint--violet" hidden>
+      <span class="dot" aria-hidden="true"></span>
+      ★ Summoning Pikachu…
+    </div>
+
+    <!-- 5 ▸ IN-AR controls -->
+    <div id="controls" class="controls" hidden>
+      <button id="soundBtn" class="btn btn--paper icon-btn" type="button" aria-pressed="true">🔊 Sound On</button>
+      <button id="storeBtn" class="btn icon-btn" type="button">Visit Store →</button>
+    </div>
+
     <script type="module">
-      import {loadGLTF} from "./loader.js";
+      import { loadGLTF } from "./loader.js";
       const THREE = window.MINDAR.IMAGE.THREE;
 
-      document.addEventListener('DOMContentLoaded', () => {
-        // Create the "Visit Store" button
-        const storeButton = document.createElement("button");
-        storeButton.classList.add("button", "store-button");
-        storeButton.innerText = "Visit the Radical Store";
-        storeButton.addEventListener("click", () => {
-          window.location.href = "https://theradical.store";
-        });
-        document.body.appendChild(storeButton);
+      // ---- UI refs ----
+      const onboarding = document.getElementById("onboarding");
+      const loading    = document.getElementById("loading");
+      const errorBox   = document.getElementById("error");
+      const errorMsg   = document.getElementById("errorMsg");
+      const scanHint   = document.getElementById("scanHint");
+      const scanReticle = document.getElementById("scanReticle");
+      const modelHint  = document.getElementById("modelHint");
+      const controls   = document.getElementById("controls");
+      const startBtn   = document.getElementById("startBtn");
+      const reloadBtn  = document.getElementById("reloadBtn");
+      const soundBtn   = document.getElementById("soundBtn");
+      const storeBtn   = document.getElementById("storeBtn");
 
-        // Create the "Tap to Unmute" button
-        const unmuteButton = document.createElement("button");
-        unmuteButton.classList.add("button", "unmute-button");
-        unmuteButton.innerText = "🔊 Unmute";
-        document.body.appendChild(unmuteButton);
+      const show = (el) => el.hidden = false;
+      const hide = (el) => el.hidden = true;
 
-        let isMuted = true; // Start muted
+      let soundOn      = true;   // user opted in by tapping "Start"
+      let targetVisible = false;
+      let audio        = null;
 
-        const start = async() => {
-          const mindarThree = new window.MINDAR.IMAGE.MindARThree({
+      // Scanning UI = the viewfinder reticle + the bottom hint, toggled together
+      const showScanning = () => { show(scanReticle); show(scanHint); };
+      const hideScanning = () => { hide(scanReticle); hide(scanHint); };
+
+      const showError = (msg) => {
+        if (msg) errorMsg.textContent = msg;
+        hide(onboarding); hide(loading); hideScanning(); hide(modelHint); hide(controls);
+        show(errorBox);
+      };
+
+      reloadBtn.addEventListener("click", () => window.location.reload());
+
+      // Store navigation — a deliberate, labelled action, kept out of the centre
+      storeBtn.addEventListener("click", () => {
+        window.location.href = "https://theradical.store";
+      });
+
+      // Sound toggle — only arms/disarms; playback is gated on target visibility
+      soundBtn.addEventListener("click", () => {
+        soundOn = !soundOn;
+        soundBtn.textContent = soundOn ? "🔊 Sound On" : "🔇 Muted";
+        soundBtn.setAttribute("aria-pressed", String(soundOn));
+        if (!audio) return;
+        if (soundOn && targetVisible) {
+          audio.play().catch(() => {});
+        } else {
+          audio.pause();
+        }
+      });
+
+      // Surface the true camera error before handing off to MindAR (which
+      // rejects with an empty error and hides the real cause).
+      const preflightCamera = async () => {
+        if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+          const e = new Error("insecure-context");
+          e.name = "InsecureContext";
+          throw e;
+        }
+        // Probe + immediately release; this also pre-prompts for permission.
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        stream.getTracks().forEach((t) => t.stop());
+      };
+
+      const start = async () => {
+        let mindarThree;
+        try {
+          await preflightCamera();
+
+          mindarThree = new window.MINDAR.IMAGE.MindARThree({
             container: document.body,
-            imageTargetSrc: 'pikachu.mind',
+            imageTargetSrc: "pikachu.mind",
+            // We render our own brand-styled loading/scanning/error UI:
+            uiLoading: "no",
+            uiScanning: "no",
+            uiError: "no",
           });
-          const {renderer, scene, camera} = mindarThree;
+          const { renderer, scene, camera } = mindarThree;
 
           const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
           scene.add(light);
 
-          const gltf = await loadGLTF('pikachudancing.glb');
-          gltf.scene.scale.set(1,1,1);
-          gltf.scene.position.set(0, -0.4, 0);
-
+          // Register the anchor BEFORE start() so detection is wired up, but
+          // defer the heavy model load until the camera is already live.
           const anchor = mindarThree.addAnchor(0);
-          anchor.group.add(gltf.scene);
+          let mixer = null;
 
-          const mixer = new THREE.AnimationMixer(gltf.scene);
-          const action = mixer.clipAction(gltf.animations[0]);
-          action.play();
+          anchor.onTargetFound = () => {
+            targetVisible = true;
+            hideScanning();
+            if (soundOn && audio) audio.play().catch(() => {});
+          };
+          anchor.onTargetLost = () => {
+            targetVisible = false;
+            if (audio) { audio.pause(); audio.currentTime = 0; }
+            showScanning();
+          };
+
+          // 1) Start the camera FIRST so the live feed is on screen immediately.
+          await mindarThree.start();   // requests camera — may reject
 
           const clock = new THREE.Clock();
-
-          // AUDIO SETUP
-          const audio = new Audio('pikachusong.m4a'); // Change this to your audio file
-          audio.loop = true;
-
-          // Play audio only after unmuting
-          anchor.onTargetFound = () => {
-            if (!isMuted) {
-              audio.play();
-            }
-          };
-
-          anchor.onTargetLost = () => {
-            audio.pause();
-            audio.currentTime = 0; // Reset to start
-          };
-
-          // Unmute on button tap
-          unmuteButton.addEventListener("click", () => {
-            isMuted = false;
-            audio.play(); // Start playing after user interaction
-            unmuteButton.remove(); // Remove button after unmuting
-          });
-
-          await mindarThree.start();
           renderer.setAnimationLoop(() => {
-            const delta = clock.getDelta();
-            gltf.scene.rotation.set(0, 0, 0);
-            mixer.update(delta);
+            if (mixer) mixer.update(clock.getDelta());
             renderer.render(scene, camera);
           });
-        };
+
+          // Drop the opaque cover — user now sees the camera behind a light chip.
+          hide(loading);
+          show(modelHint);
+
+          // 2) Load the model over the live camera, then reveal the scan hint.
+          const gltf = await loadGLTF("pikachudancing.glb");
+          gltf.scene.scale.set(1, 1, 1);
+          gltf.scene.position.set(0, -0.4, 0);
+          anchor.group.add(gltf.scene);
+
+          mixer = new THREE.AnimationMixer(gltf.scene);
+          mixer.clipAction(gltf.animations[0]).play();
+
+          // ---- Audio: tied to target visibility, never floating on its own ----
+          audio = new Audio("pikachusong.m4a");
+          audio.loop = true;
+          if (targetVisible && soundOn) audio.play().catch(() => {});
+
+          hide(modelHint);
+          if (!targetVisible) showScanning();   // skip if the card is already locked
+          show(controls);
+        } catch (err) {
+          console.error("AR failed to start:", err);
+          const name = String(err?.name || "");
+          const msg  = String(err?.message || err || "");
+
+          if (name === "InsecureContext") {
+            showError("Open this over a web address, not a file. The camera only works on https:// or http://localhost — run a local server and visit the page there.");
+          } else if (/NotAllowed|Permission|denied/i.test(name + msg)) {
+            showError("Camera access was blocked. Allow the camera for this site in your browser, then reload.");
+          } else if (/NotFound|NotReadable|Overconstrained/i.test(name + msg)) {
+            showError("No usable camera was found. Check that a camera is connected and not in use by another app, then reload.");
+          } else {
+            showError("We couldn't load the AR experience. Check your connection and reload.");
+          }
+        }
+      };
+
+      // Onboarding tap = the single user gesture that unlocks camera + audio autoplay
+      startBtn.addEventListener("click", () => {
+        hide(onboarding);
+        show(loading);
         start();
       });
     </script>

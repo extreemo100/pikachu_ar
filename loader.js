@@ -8,6 +8,8 @@ export const loadGLTF = (path) => {
     const loader = new GLTFLoader();
     loader.load(path, (gltf) => {
       resolve(gltf);
+    }, undefined, (err) => {
+      reject(err);
     });
   });
 }
