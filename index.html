@@ -620,6 +620,11 @@
 
       const start = async () => {
         let mindarThree;
+        // Kick off the model download immediately so the 3.2 MB transfer
+        // overlaps the camera permission prompt + MindAR init, instead of
+        // waiting for them to finish first.
+        const gltfPromise = loadGLTF("pikachudancing.glb");
+        gltfPromise.catch(() => {});   // mark handled; it's awaited (and re-thrown) below
         try {
           await preflightCamera();
 
@@ -682,7 +687,10 @@
 
           const clock = new THREE_MODEL.Clock();
           renderer.setAnimationLoop(() => {
-            if (mixer) mixer.update(clock.getDelta());
+            // Keep the clock advancing every frame, but only spend CPU on
+            // skinned animation while Pikachu is actually visible.
+            const dt = clock.getDelta();
+            if (mixer && targetVisible) mixer.update(dt);
 
             // Pop the model in over ~280ms when the target is found
             if (model && popStart !== null) {
@@ -701,8 +709,9 @@
           hide(loading);
           show(modelHint);
 
-          // 2) Load the model over the live camera, then reveal the scan hint.
-          const gltf = await loadGLTF("pikachudancing.glb");
+          // 2) The model is already downloading (kicked off above) — await it,
+          //    then reveal the scan hint.
+          const gltf = await gltfPromise;
           gltf.scene.scale.set(1, 1, 1);
           gltf.scene.position.set(0, -0.4, 0);
           anchor.group.add(gltf.scene);
