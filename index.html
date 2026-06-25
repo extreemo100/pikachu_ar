@@ -300,6 +300,30 @@
         letter-spacing: 1px;
         text-transform: uppercase;
       }
+      /* Keep the three-button bar from crowding on narrow phones */
+      @media (max-width: 400px) {
+        .controls .icon-btn { font-size: 11px; padding: 12px 13px; letter-spacing: .5px; }
+      }
+
+      /* ---- Lock-on / shutter flash ---- */
+      .flash {
+        position: fixed;
+        inset: 0;
+        z-index: 9000;
+        pointer-events: none;
+        opacity: 0;
+        background: var(--acid);
+      }
+      .flash.go { animation: flash 0.4s ease-out; }
+      .flash.shutter { background: var(--paper); }
+      @keyframes flash {
+        0%   { opacity: 0; }
+        12%  { opacity: 0.7; }
+        100% { opacity: 0; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .flash.go { animation: none; }
+      }
     </style>
   </head>
 
@@ -342,10 +366,10 @@
       <span class="sweep"></span>
     </div>
 
-    <!-- 4 ▸ IN-AR scanning hint -->
+    <!-- 4 ▸ IN-AR scanning hint (text escalates if scanning takes a while) -->
     <div id="scanHint" class="scan-hint" hidden>
       <span class="dot" aria-hidden="true"></span>
-      Scanning · point at the Pikachu card
+      <span id="scanText">Scanning · point at the Pikachu card</span>
     </div>
 
     <!-- 4b ▸ Model-loading chip — sits over the LIVE camera, never blocks it -->
@@ -357,8 +381,12 @@
     <!-- 5 ▸ IN-AR controls -->
     <div id="controls" class="controls" hidden>
       <button id="soundBtn" class="btn btn--paper icon-btn" type="button" aria-pressed="true">🔊 Sound On</button>
+      <button id="snapBtn" class="btn btn--orange icon-btn" type="button">📸 Snap</button>
       <button id="storeBtn" class="btn icon-btn" type="button">Visit Store →</button>
     </div>
+
+    <!-- Full-screen flash for lock-on (acid) and shutter (paper) feedback -->
+    <div id="flash" class="flash" aria-hidden="true"></div>
 
     <script type="module">
       import { loadGLTF } from "./loader.js";
@@ -383,7 +411,10 @@
       const startBtn   = document.getElementById("startBtn");
       const reloadBtn  = document.getElementById("reloadBtn");
       const soundBtn   = document.getElementById("soundBtn");
+      const snapBtn    = document.getElementById("snapBtn");
       const storeBtn   = document.getElementById("storeBtn");
+      const scanText   = document.getElementById("scanText");
+      const flash      = document.getElementById("flash");
 
       const show = (el) => el.hidden = false;
       const hide = (el) => el.hidden = true;
@@ -391,10 +422,34 @@
       let soundOn      = true;   // user opted in by tapping "Start"
       let targetVisible = false;
       let audio        = null;
+      let captureRequested = false;   // read by the render loop (see start())
 
-      // Scanning UI = the viewfinder reticle + the bottom hint, toggled together
-      const showScanning = () => { show(scanReticle); show(scanHint); };
-      const hideScanning = () => { hide(scanReticle); hide(scanHint); };
+      // Brief full-screen flash — "acid" for lock-on, "shutter" for a snap
+      const triggerFlash = (variant = "") => {
+        flash.className = "flash";          // reset so it can re-fire
+        void flash.offsetWidth;             // force reflow
+        flash.classList.add("go");
+        if (variant) flash.classList.add(variant);
+      };
+
+      // ---- Scanning coaching: escalate the hint if the card isn't found ----
+      const COACH = [
+        "Scanning · point at the Pikachu card",
+        "Fit the whole card inside the frame",
+        "More light & a steady hand helps",
+      ];
+      let coachTimers = [];
+      const clearCoach = () => { coachTimers.forEach(clearTimeout); coachTimers = []; };
+      const startCoach = () => {
+        clearCoach();
+        scanText.textContent = COACH[0];
+        coachTimers.push(setTimeout(() => { scanText.textContent = COACH[1]; }, 5000));
+        coachTimers.push(setTimeout(() => { scanText.textContent = COACH[2]; }, 12000));
+      };
+
+      // Scanning UI = reticle + hint + coaching, all toggled together
+      const showScanning = () => { show(scanReticle); show(scanHint); startCoach(); };
+      const hideScanning = () => { hide(scanReticle); hide(scanHint); clearCoach(); };
 
       const showError = (msg) => {
         if (msg) errorMsg.textContent = msg;
@@ -409,6 +464,14 @@
         window.location.href = "https://theradical.store";
       });
 
+      // Snap & share — request a capture; the render loop does it on the next
+      // frame so we read the WebGL canvas while it still holds the drawn pixels.
+      snapBtn.addEventListener("click", () => {
+        captureRequested = true;
+        triggerFlash("shutter");
+        if (navigator.vibrate) navigator.vibrate(15);
+      });
+
       // Sound toggle — only arms/disarms; playback is gated on target visibility
       soundBtn.addEventListener("click", () => {
         soundOn = !soundOn;
@@ -421,6 +484,66 @@
           audio.pause();
         }
       });
+
+      // Composite the live camera + rendered model into one image and share it
+      // (Web Share with a file on mobile; download fallback otherwise).
+      const captureAndShare = (video, renderer) => {
+        const canvas = renderer.domElement;
+        const w = canvas.width, h = canvas.height;
+        if (!w || !h) return;
+
+        const out = document.createElement("canvas");
+        out.width = w; out.height = h;
+        const ctx = out.getContext("2d");
+
+        // Camera feed, scaled to cover, then the rendered Pikachu on top
+        if (video && video.videoWidth) {
+          const vw = video.videoWidth, vh = video.videoHeight;
+          const s = Math.max(w / vw, h / vh);
+          const dw = vw * s, dh = vh * s;
+          ctx.drawImage(video, (w - dw) / 2, (h - dh) / 2, dw, dh);
+        } else {
+          ctx.fillStyle = "#0d0d0d"; ctx.fillRect(0, 0, w, h);
+        }
+        ctx.drawImage(canvas, 0, 0, w, h);
+
+        // On-brand watermark (ink outline + acid fill, mono label voice)
+        const pad = Math.round(w * 0.035);
+        const fs  = Math.max(14, Math.round(w * 0.024));
+        ctx.font = `${fs}px 'DM Mono', monospace`;
+        ctx.textBaseline = "bottom";
+        const label = "LIVE YOUR LIFE WITH ART YOU LOVE · THERADICAL.STORE";
+        ctx.lineWidth = Math.max(2, fs * 0.2);
+        ctx.lineJoin = "round";
+        ctx.strokeStyle = "rgba(13,13,13,0.9)";
+        ctx.strokeText(label, pad, h - pad);
+        ctx.fillStyle = "#d4ff3f";
+        ctx.fillText(label, pad, h - pad);
+
+        out.toBlob(async (blob) => {
+          if (!blob) return;
+          const file = new File([blob], "pikachu-ar.png", { type: "image/png" });
+          const shareData = {
+            files: [file],
+            title: "Pikachu AR · The Radical Store",
+            text: "Live your life with art you love ⚡ theradical.store",
+          };
+          try {
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+              await navigator.share(shareData);
+              return;
+            }
+          } catch (e) {
+            if (e && e.name === "AbortError") return;   // user dismissed sheet
+          }
+          // Fallback: download the image
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url; a.download = "pikachu-ar.png";
+          document.body.appendChild(a); a.click(); a.remove();
+          URL.revokeObjectURL(url);
+        }, "image/png");
+      };
 
       // Surface the true camera error before handing off to MindAR (which
       // rejects with an empty error and hides the real cause).
@@ -462,10 +585,16 @@
           // defer the heavy model load until the camera is already live.
           const anchor = mindarThree.addAnchor(0);
           let mixer = null;
+          let model = null;
+          let popStart = null;   // timestamp to drive the "pop-in" on lock-on
 
           anchor.onTargetFound = () => {
             targetVisible = true;
             hideScanning();
+            // Lock-on feedback: haptic buzz + acid flash + a quick pop-in
+            if (navigator.vibrate) navigator.vibrate(30);
+            triggerFlash();
+            if (model) popStart = performance.now();
             if (soundOn && audio) audio.play().catch(() => {});
           };
           anchor.onTargetLost = () => {
@@ -482,10 +611,30 @@
           // rate — and therefore the animation — smooth on mobile.
           renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 
+          // MindAR's camera feed lives in a <video> behind the canvas; we need
+          // it to composite the snapshot.
+          const video = document.querySelector("video");
+
+          const easeOutBack = (x) => {
+            const c1 = 1.70158, c3 = c1 + 1;
+            return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
+          };
+
           const clock = new THREE_MODEL.Clock();
           renderer.setAnimationLoop(() => {
             if (mixer) mixer.update(clock.getDelta());
+
+            // Pop the model in over ~280ms when the target is found
+            if (model && popStart !== null) {
+              const t = Math.min((performance.now() - popStart) / 280, 1);
+              model.scale.setScalar(Math.max(0.001, easeOutBack(t)));
+              if (t >= 1) { model.scale.setScalar(1); popStart = null; }
+            }
+
             renderer.render(scene, camera);
+
+            // Capture must read the canvas right after a render, same frame.
+            if (captureRequested) { captureRequested = false; captureAndShare(video, renderer); }
           });
 
           // Drop the opaque cover — user now sees the camera behind a light chip.
@@ -497,6 +646,8 @@
           gltf.scene.scale.set(1, 1, 1);
           gltf.scene.position.set(0, -0.4, 0);
           anchor.group.add(gltf.scene);
+          model = gltf.scene;
+          if (targetVisible) popStart = performance.now();   // pop if already locked
 
           // Mixer from the model's own build (r132) — see import note above.
           mixer = new THREE_MODEL.AnimationMixer(gltf.scene);
