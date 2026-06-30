@@ -144,7 +144,7 @@
       .scan-target {
         position: relative;
         width: 150px;
-        aspect-ratio: 3 / 4;          /* matches the portrait card */
+        aspect-ratio: 3 / 4;          /* matches the portrait poster */
         flex: none;
         border: 3px solid var(--ink);
         border-radius: 12px;          /* thumbnail radius per the system */
@@ -220,7 +220,7 @@
         left: 50%;
         transform: translate(-50%, -54%);   /* sit slightly above optical centre */
         width: min(68vw, 300px);
-        aspect-ratio: 3 / 4;                 /* matches the portrait Pikachu card */
+        aspect-ratio: 3 / 4;                 /* matches the portrait Pikachu poster */
         z-index: 40;
         pointer-events: none;
         overflow: hidden;
@@ -378,12 +378,12 @@
       <div class="scan-card">
         <div class="scan-target">
           <!-- Real target preview; falls back to the ⚡ frame if the file is missing -->
-          <img id="targetImg" src="target.jpeg" alt="The Pikachu card to point your camera at"
+          <img id="targetImg" src="target.jpeg" alt="The Pikachu poster to point your camera at"
                onerror="this.classList.add('is-missing')">
           <i></i><i></i><i></i><i></i>
           <span class="sweep"></span>
         </div>
-        <p class="lede"><strong>This</strong> is your target — point your camera at the Pikachu card and watch it come alive, with sound.</p>
+        <p class="lede"><strong>This</strong> is your target — point your camera at the Pikachu poster and watch it come alive, with sound.</p>
       </div>
       <button id="startBtn" class="btn btn--orange" type="button">Start Experience →</button>
       <span class="kicker" style="opacity:.7">Needs camera access · works best in good light</span>
@@ -412,13 +412,13 @@
     <!-- 4 ▸ IN-AR scanning hint (text escalates if scanning takes a while) -->
     <div id="scanHint" class="scan-hint" hidden>
       <span class="dot" aria-hidden="true"></span>
-      <span id="scanText">Scanning · point at the Pikachu card</span>
+      <span id="scanText">Scanning · point at the Pikachu poster</span>
     </div>
 
     <!-- 4b ▸ Model-loading chip — sits over the LIVE camera, never blocks it -->
     <div id="modelHint" class="scan-hint scan-hint--violet" hidden>
       <span class="dot" aria-hidden="true"></span>
-      ★ Summoning Pikachu…
+      ★ Bringing it to life…
     </div>
 
     <!-- Snap & Share — top-right, out of the way of the bottom control bar -->
@@ -492,10 +492,10 @@
         lockToastTimer = setTimeout(() => { lockToast.hidden = true; }, 1800);
       };
 
-      // ---- Scanning coaching: escalate the hint if the card isn't found ----
+      // ---- Scanning coaching: escalate the hint if the poster isn't found ----
       const COACH = [
-        "Scanning · point at the Pikachu card",
-        "Fit the whole card inside the frame",
+        "Scanning · point at the Pikachu poster",
+        "Fit the whole poster inside the frame",
         "More light & a steady hand helps",
       ];
       let coachTimers = [];
@@ -637,7 +637,7 @@
             uiError: "no",
             // Smooth the tracked pose so the anchored model doesn't jitter.
             // Lower filterMinCF = less jitter when still; lower filterBeta =
-            // a touch more lag but steadier. Tuned for a mostly-static card.
+            // a touch more lag but steadier. Tuned for a mostly-static poster.
             filterMinCF: 0.0001,
             filterBeta: 0.001,
           });
@@ -728,7 +728,7 @@
           if (targetVisible && soundOn) audio.play().catch(() => {});
 
           hide(modelHint);
-          if (!targetVisible) showScanning();   // skip if the card is already locked
+          if (!targetVisible) showScanning();   // skip if the poster is already locked
           show(controls);
           show(snapBtn);
         } catch (err) {
